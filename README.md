@@ -4,6 +4,8 @@ Words wander in meaning over time. Tech terms at the height of the hype cycle do
 
 Today's LLM RL teaches models *how to think* instead of *what to answer*. Traditional fine-tuning shows models examples of good outputs: RL teaches the *process* of generating good outputs. Early CoT prompt engineering showed models *could* think, inspiring RL approaches to train models to think *automatically* and think *well*. Reasoning models have grown out of RL.
 
+Traditional RL (TradRL)[^0] involves continuous environment interaction and actual learning during episodes. LLM RL is more like batch learning from completed episodes - you run the whole thing, get a score, then update the model for next time.
+
 Generalizing, Reinforcement Learning is useful when a system takes a bunch of intermediate steps leading eventually to a valuable end result. "Valuable" meaning "able to be valued" - the reward typically can't be calculated until the entire system is finished.
 
 Since the development of thinking models, a lot of LLM RL applications have been found: reasoning enhancement, codegen, tool use, agentness, game playing, etc. All have in common a pattern where they walk a long path before reaching the destination, and it's hard to trace back what steps were crucial to reaching the end.
@@ -12,7 +14,7 @@ Since the development of thinking models, a lot of LLM RL applications have been
 
 I have just enough of a classical ML background to be very confused when I started hearing about LLM RL. This started me on a deep dive to discover exactly what makes LLM RL different from everything else.
 
-### Traditional LLM training vs LLM RL
+### LLM pre-training vs LLM RL
 
 Traditional LLM training provides reward per-token. It trains to produce the next token accurately, and to an extent each next-token prediction is graded/optimized for independently of all the others. If the 2nd token is predicted accurately, it doesn't matter what the 10th token prediction is.
 
@@ -20,20 +22,14 @@ RL rewards the model based on the end token(s). The model outputs a bunch of tok
 
 ### Traditional RL vs LLM RL
 
-These are kinda different things. Traditional RL involves continuous environment interaction and, well, learning. LLM RL batch learns and then stops learning (usually) - you just use the resultant models.
+These are kinda different things. Traditional RL (TradRL) involves continuous environment interaction and, well, learning. LLM RL batch learns and then stops learning (usually) - you just use the resultant models.
 
-Reward distribution is also different - TradRL tends to have rewards given continuously at every step, LLMRL runs the entire episode and only then gives you the reward. This relates to the above point. TradRL learns *during* an episode, and the learning is somewhat but not reliably generalizable to other episodes. LLMRL learns *from* an episode, then generalizes to other episodes. TradRL helps within the current episode, LLMRL helps with future episodes.
+Reward distribution is also different - TradRL tends to have rewards given continuously at every step, LLM RL runs the entire episode and only then gives you the reward. This relates to the above point. TradRL learns *during* an episode, and the learning is somewhat but not reliably generalizable to other episodes. LLM RL learns *from* an episode, then generalizes to other episodes. TradRL helps within the current episode, LLM RL helps with future episodes.
 
-TradRL has feedback loops within each step (action -> sense response -> next action). LLMRL treats each token as a step, so it skips the 'sense' part (token -> next token).
+TradRL has feedback loops within each step (action -> sense response -> next action). LLM RL treats each token as a step, so it skips the 'sense' part (token -> next token).
 
-There are still some similarities:
+You do get TradRL heritage in the value and reward functions, credit assignment, and policy gradients. I'm not sure that's enough to steal the label - I think Sutton would be mad, but maybe that's just me.[^1]
 
-* It involves sequential decision making (each token is a decision)
-* It deals with delayed rewards (only get feedback at sequence end)
-* It requires credit assignment (core RL problem)
-* It uses RL mathematical frameworks (policy gradients, value functions)
-
-Still, I think Sutton would be mad.[^1]
 
 ### Gradient Descent vs LLM RL
 
@@ -47,21 +43,7 @@ They both use gradient-based parameter updates (it's in the name).
 
 Gradient Descent generally has *exact, differentiable* rewards. The goal is a number, and the ML system changes the number in predictable ways. LLM RL typically has *stochastic, non-differentiable* goals. E.g., "funny" is a kinda vague non-numerical goal, and you can't solve a math equation that will tweak the LLM to be "more funny", because "funniness" isn't a differentiable numerical equation.
 
-Basically gradient descent is a nice comfortable algebra equation with actual solutions and LLMRL is a stochastic probabilistic process where you can estimate it by trying things and seeing what happens.
-
-**Regular training scenario:**
-
-- Input: "What's 2+2?"
-- Target: "4"
-- Model output: "5"
-- Gradient calculation: Exact math tells you how to adjust each parameter to make the model more likely to output "4"
-
-**RL scenario:**
-
-- Input: "What's 2+2?"
-- Model output: "Well, let me think step by step. First, I'll consider what addition means. Addition is combining quantities. So 2+2 means I have 2 of something, then 2 more. That gives me 4."
-- Human rating: 9/10 (loved the explanation)
-- **The mystery**: Which parts of that response made it good? The step-by-step approach? The definition of addition? The clear reasoning? The correct answer?
+Basically gradient descent is a nice comfortable algebra equation with actual solutions and LLM RL is a stochastic probabilistic process where you can estimate it by trying things and seeing what happens.
 
 ### Supervised Learning vs LLM RL
 
@@ -71,42 +53,17 @@ This is a pretty big deal.
 
 **Direct Preference Optimization**
 
-The supervised-learning version of LLM RL finds the optimal policy for *preference constraints* using the Bradley-Terry model. Instead of running a reward function which goes "A is good, and B is gooder", DPO gives "A < B". Add enough of the alphabet and you start to get something meaningful.
+Instead of the classic RLHF pipeline (train reward model, run RL, pray everything works), DPO skips straight to supervised classification on preference data. Instead of a reward model estimating "A is good, and B is gooder", preference data just needs to know `A < B`. Add enough of the alphabet and you start to get something meaningful.
 
-DPO basically completely replaces the RLHF stack with classic supervised classification.
+It makes no equivalence claims on anything but the optimal policy. That's great, since we only care about the optimal policy.
 
-The algebra that proves that RLHF and DPO will produce the same *optimal policy* only works when:
+This is life-changing for RLHF[^2] and similar problems. Supervised learning is much, *much* easier and cheaper than LLM RL. It's like realizing you can get to the same destination by taking the highway instead of Hannibal'ing over the Alps.
 
-* The Bradley-Terry model perfectly fits the preference data
-* The reward model perfectly captures human preferences (hard)
-* You reach the global optimum (not just local)
+Tragically it can't be used everywher. LLM RL is equivalent to DPO supervised learning when you have preference data of "the right sort".[^20] This is often the case for RLHF, when you're optimizing for alignment/human preferences, since that's intrinsically preference data. It falls apart when you need actual outcome rewards (like "this code compiles" vs "this code doesn't") or when you're doing complex multi-step reasoning where the journey matters more than the destination. Teaching models how to think remains an RL-ish problem.
 
-DPO only works with simple preference data, RL can use any reward model. This means RL can more easily handle complexity, vibes, competing objectives. RL can also continue learning 'online' in deployment[^2]
+**No but for real**
 
-**Scope of equivalence**
-
-LLM RL is equivalent to DPO supervised learning *in result* when:
-
-- When you have preference data (A better than B). 
-- When the Bradley-Terry model fits your preferences well
-
-This is often the case for RLHF, when you're optimizing for alignment/human preferences, since that's intrinsically preference data. It fails for a lot of other use-cases (tool use, math) where the rewards are binary instead of preference.
-
-Some examples where it doesn't work:
-
-- When you only have outcome rewards (correct/incorrect) without preferences
-- When you have complex multi-step reasoning where intermediate steps matter
-- When you're doing actual agentic tasks (tool use, planning)
-
-**Out-of-equivalence comparison**
-
-While some LLM RL problems can be *simplified* to DPO, there are still some philosophical differences:
-
-* Objective function (maximize reward vs minimize loss)
-
-* Problem formulation (sequential decision making vs pattern matching)
-
-* Data requirements (can learn from outcomes vs needs examples)
+Supervised learning is not the same as LLM RL. At all. Except for the problems when they're equivalent, yes, but still. The philosophical problem is different (decision making vs pattern matching) and the objectives are polar opposite (reward maxxing vs loss minning).
 
 That said, the parameter update mechanic of gradients is *kinda* similar, but calculating the gradient for LLM RL can get messy and stochastic if the reward function isn't differentiable. 
 
@@ -228,8 +185,9 @@ The KL constraint controls the prioritization of local-reward-maxing vs consiste
 
 <hr> 
 
+[^0]: It's a pun.
 [^1]: There's an entire section in Reinforcement Learning: An introduction dedicated to making it clear that Supervised Learning Is Not Reinforcement Learning
-[^2]: Some versions, at least - this is what the thumbs up/down buttons on ChatGPT do.
+[^2]: The name gets more ironic by the day
 [^3]: These are generally complex and expensive. Monte Carlo involves running the same episode many times to get an average, separate reward models often need to be specially trained.
 [^4]: Of course the basic method isn't enough - you don't get a new paper published without inventing something new!
 [^5]: Step *generally* means 'token' in LLM RL, but there are some methods that class it differently, e.g.: reasoning step.
@@ -237,7 +195,8 @@ The KL constraint controls the prioritization of local-reward-maxing vs consiste
 [^7]: I'm sure we'll have LLM-as-judge in here soon enough, if Constitutional AI isn't already making its way over.
 [^8]: Because the math involves a derivative, and derivatives only work on differentiable functions. As in, the definition of a differentiable function is "a function that has a derivative." Delightful!
 [^9]: Also because there are math papers proving it mathematically, but those math papers confuse me.
-[^10]: It's worst when they're organizing dinner. You say you want pizza, A says they want pizza, B says they want burgers, and for some reason you're getting burgers just because B was last? What's up with that?
+[^10]: It's worst when they're organizing dinner. You say you want pizza, A says they want pizza, B says they want burgers, and somehow you're getting burgers just because B spoke last? Annoying.
 [^11]: This is pretty similar to mean-average, but there's a different way to calculate that is less computationally/memory intensive when performed iteratively.
 [^12]: Yes, it's another math thing. LLM RL is a collection of math things, and stats things we turn into math things because math things are easier to compute.
 [^13]: Or probability distribution, or neural network, or whatever
+[^20]: Draco Malfoy's preferred preference data fits the Bradley-Terry model
